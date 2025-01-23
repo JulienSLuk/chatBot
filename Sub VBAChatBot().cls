@@ -1,96 +1,96 @@
 Sub VBAChatBot()
-    Dim userInput As String
+    Dim userInput As Variant ' Use Variant to handle both string and False
     Dim response As String
-    Dim promptText As String
-    Dim topics As String
-    Dim result As Variant
-
-    ' Predefined topics for dropdown
-    topics = "Cleanup Output,Copy and Format Dates,Check Whitelist,Find Missing NRIC,Append Data,NRIC Dynamic Fill"
     
-    ' Welcome message
-    MsgBox "Welcome to the Excel VBA Chatbot!" & vbNewLine & _
-           "You can ask about various macros or type custom questions." & vbNewLine & _
-           "For common topics, use the dropdown for guidance.", vbInformation, "Chatbot Introduction"
+    ' Display available topics in a user-friendly format
+    ShowAvailableTopics
     
-    ' Prompt user with dropdown options
-    result = Application.InputBox("Ask a question about the macros or select a topic:" & vbNewLine & topics, _
-                                  "VBA Chatbot", Type:=2)
+    ' Get user input
+    userInput = Application.InputBox("Enter a command from the available topics:", "Excel VBA Chatbot", Type:=2)
     
-    ' Handle Cancel button or empty input
-    If VarType(result) = vbBoolean Then
-        If result = False Then Exit Sub ' Exit if Cancel
-    End If
-    
-    If Trim(result) = "" Then
-        MsgBox "Please enter a valid question.", vbExclamation, "Invalid Input"
+    ' Exit if the user cancels
+    If userInput = False Or Trim(CStr(userInput)) = "" Then
+        MsgBox "No command entered. Exiting chatbot.", vbExclamation, "Chatbot Exit"
         Exit Sub
     End If
-
-    ' Cast result explicitly to String
-    userInput = CStr(result)
     
-    ' Process the input and generate a response
-    response = GetChatbotResponse(userInput)
+    ' Get the chatbot's response
+    response = GetChatbotResponse(CStr(userInput)) ' Ensure passing as string
     
-    ' Display the response
+    ' Display the response or run the associated macro
     If response <> "" Then
         MsgBox response, vbInformation, "Chatbot Response"
     Else
-        MsgBox "I'm sorry, I couldn't understand your question. Try selecting a topic or rephrasing.", vbExclamation, "Chatbot Response"
+        MsgBox "Command not recognized. Please check the available topics.", vbExclamation, "Unrecognized Command"
     End If
-    
-    ' Log the chat history
-    Call LogChatHistory(userInput, response)
+End Sub
+
+Private Sub ShowAvailableTopics()
+    Dim topicsArr As Variant ' Explicitly declare as Variant to handle the array
+
+    ' Predefined topics stored in an array
+    topicsArr = Array( _
+        "Append pd button", _
+        "Cleanup Output button", _
+        "dys1", _
+        "D.NR" _
+    )
+
+    ' Display available topics in a message box
+    MsgBox "Available Topics:" & vbCrLf & vbCrLf & Join(topicsArr, vbCrLf), vbInformation, "Topics List"
 End Sub
 
 Function GetChatbotResponse(userInput As String) As String
-    Dim wsKnowledgeBase As Worksheet
+    Dim wsKB As Worksheet
+    Dim wsChatLog As Worksheet
     Dim lastRow As Long
-    Dim commandRange As Range
-    Dim matchRow As Variant
+    Dim foundRow As Long
     
-    ' Set the KnowledgeBase sheet
-    Set wsKnowledgeBase = ThisWorkbook.Sheets("KnowledgeBase")
-    
-    ' Find the last row in the KnowledgeBase sheet
-    lastRow = wsKnowledgeBase.Cells(wsKnowledgeBase.Rows.Count, 1).End(xlUp).Row
-    
-    ' Set the range for commands (Column A)
-    Set commandRange = wsKnowledgeBase.Range("A2:A" & lastRow)
-    
-    ' Look for a match with the user input
-    matchRow = Application.Match(LCase(userInput), commandRange, 0)
-    
-    If Not IsError(matchRow) Then
-        ' If a match is found, return the response from Column B
-        GetChatbotResponse = wsKnowledgeBase.Cells(matchRow + 1, 2).Value
-    Else
-        ' If no match is found, return a default response
-        GetChatbotResponse = "I'm sorry, I don't understand that command. Please check the KnowledgeBase sheet."
-    End If
-End Function
-
-
-Sub LogChatHistory(question As String, response As String)
-    Dim wsLog As Worksheet
-    Dim lastRow As Long
-
-    ' Check if the ChatLog sheet exists, if not create it
+    ' Set worksheets
     On Error Resume Next
-    Set wsLog = ThisWorkbook.Sheets("ChatLog")
+    Set wsKB = ThisWorkbook.Sheets("KnowledgeBase")
+    Set wsChatLog = ThisWorkbook.Sheets("ChatLog")
     On Error GoTo 0
     
-    If wsLog Is Nothing Then
-        Set wsLog = ThisWorkbook.Sheets.Add
-        wsLog.Name = "ChatLog"
-        wsLog.Range("A1:B1").Value = Array("Question", "Response")
+    ' Ensure KnowledgeBase exists
+    If wsKB Is Nothing Then
+        MsgBox "KnowledgeBase sheet not found. Please ensure the KnowledgeBase sheet exists.", vbCritical, "Error"
+        Exit Function
     End If
-
-    ' Log the chat history
-    lastRow = wsLog.Cells(wsLog.Rows.Count, "A").End(xlUp).Row + 1
-    wsLog.Cells(lastRow, 1).Value = question
-    wsLog.Cells(lastRow, 2).Value = response
-End Sub
+    
+    ' Ensure ChatLog exists, or create it
+    If wsChatLog Is Nothing Then
+        Set wsChatLog = ThisWorkbook.Sheets.Add
+        wsChatLog.Name = "ChatLog"
+        wsChatLog.Range("A1:B1").Value = Array("User Input", "Response")
+    End If
+    
+    ' Search for the user input in the KnowledgeBase
+    lastRow = wsKB.Cells(wsKB.Rows.Count, 1).End(xlUp).Row
+    foundRow = 0
+    On Error Resume Next
+    foundRow = Application.Match(userInput, wsKB.Columns(1), 0)
+    On Error GoTo 0
+    
+    If foundRow > 0 Then
+        ' Log the query
+        wsChatLog.Cells(wsChatLog.Rows.Count, 1).End(xlUp).Offset(1, 0).Value = userInput
+        wsChatLog.Cells(wsChatLog.Rows.Count, 2).End(xlUp).Offset(1, 0).Value = wsKB.Cells(foundRow, 2).Value
+        
+        ' Return the corresponding response
+        GetChatbotResponse = wsKB.Cells(foundRow, 2).Value
+        
+        ' Run macro if specified
+        If Left(GetChatbotResponse, 1) = "=" Then
+            Application.Run Mid(GetChatbotResponse, 2) ' Remove '=' and run macro
+            GetChatbotResponse = ""
+        End If
+    Else
+        ' Log unrecognized command
+        wsChatLog.Cells(wsChatLog.Rows.Count, 1).End(xlUp).Offset(1, 0).Value = userInput
+        wsChatLog.Cells(wsChatLog.Rows.Count, 2).End(xlUp).Offset(1, 0).Value = "Unrecognized Command"
+        GetChatbotResponse = ""
+    End If
+End Function
 
 
